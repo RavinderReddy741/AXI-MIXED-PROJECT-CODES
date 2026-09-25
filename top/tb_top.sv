@@ -57,8 +57,13 @@ module tb_top;
     // ========================================================
     // PARAMETERS -- match these to the DUT wrapper ports
     // ========================================================
-    // Width of S01_AXI_0_{aw,w,b,ar,r}id on the DUT wrapper
-    localparam int S01_ID_W = 2;
+    // Width of S01_AXI_0_{aw,b,ar,r}id on the DUT wrapper
+    localparam int S01_ID_W  = 2;
+    // Width of S01_AXI_0_wid on the DUT wrapper. In this BD WID is
+    // 4 bits while the other S01 IDs are 2 bits (Vivado sizes WID
+    // from the interconnect's global ID width). The driver puts
+    // AWID in WID[1:0] and zeros in the upper bits.
+    localparam int S01_WID_W = 4;
 
     // ========================================================
     // CLOCK AND RESET
@@ -137,7 +142,7 @@ module tb_top;
         .S01_AXI_0_awprot   (axi3_s01_if.awprot),
         .S01_AXI_0_awvalid  (axi3_s01_if.awvalid),
         .S01_AXI_0_awready  (axi3_s01_if.awready),
-        .S01_AXI_0_wid      (axi3_s01_if.wid[S01_ID_W-1:0]),
+        .S01_AXI_0_wid      (axi3_s01_if.wid[S01_WID_W-1:0]),
         .S01_AXI_0_wdata    (axi3_s01_if.wdata),
         .S01_AXI_0_wstrb    (axi3_s01_if.wstrb),
         .S01_AXI_0_wlast    (axi3_s01_if.wlast),
