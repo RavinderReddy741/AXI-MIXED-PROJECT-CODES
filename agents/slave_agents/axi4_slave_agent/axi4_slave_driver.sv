@@ -189,6 +189,10 @@ class axi4_slave_driver extends uvm_driver #(axi4_seq_item);
                     if (wr_strb[b])
                         mem[{beat_addr[31:2], 2'b00} + b] = wr_data[b*8+:8];
 
+                `uvm_info("AXI4_SDRV",
+                    $sformatf("%s WR beat %0d addr=0x%08h data=0x%08h strb=0x%h id=0x%0h",
+                        $sformatf("[%s]", get_parent().get_name()), beat, beat_addr, wr_data, wr_strb, aw_id), UVM_MEDIUM)
+
                 beat_addr = axi_next_addr(aw_addr, beat_addr, aw_size,
                                           aw_burst, aw_len);
             end
@@ -270,6 +274,7 @@ class axi4_slave_driver extends uvm_driver #(axi4_seq_item);
                 vif.slave_cb.rresp  <= resp;
                 vif.slave_cb.rlast  <= (beat == ar_len);
                 vif.slave_cb.rvalid <= 1'b1;
+                trace_read(ar_id, beat_addr, beat, ar_len);
                 do @(vif.slave_cb); while (vif.slave_cb.rready !== 1'b1);
 
                 beat_addr = axi_next_addr(ar_addr, beat_addr, ar_size,
@@ -279,6 +284,20 @@ class axi4_slave_driver extends uvm_driver #(axi4_seq_item);
             vif.slave_cb.rlast  <= 1'b0;
         end
     endtask
+
+    // Read-path debug: what this slave actually puts on RDATA.
+    // Run with +UVM_VERBOSITY=UVM_MEDIUM. If a read shows
+    // "NEVER WRITTEN" the write went elsewhere (address/lane/routing)
+    // or the read overtook the write.
+    function void trace_read(logic [3:0] id, logic [31:0] addr, int beat, int len);
+        bit written = 0;
+        for (int b = 0; b < 4; b++)
+            written |= mem.exists({addr[31:2],2'b00} + b);
+        `uvm_info("AXI4_SDRV",
+            $sformatf("%s RD beat %0d/%0d addr=0x%08h rdata=0x%08h rid=0x%0h%s",
+                $sformatf("[%s]", get_parent().get_name()), beat, len, addr, read_mem(addr), id,
+                written ? "" : "  <-- NEVER WRITTEN, returns 0"), UVM_MEDIUM)
+    endfunction
 
     function void preload(
         logic [31:0] addr,

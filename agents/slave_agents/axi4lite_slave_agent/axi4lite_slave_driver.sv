@@ -137,7 +137,7 @@ class axi4lite_slave_driver extends uvm_driver #(axi4lite_seq_item);
 
             `uvm_info("LITE_SDRV",
                 $sformatf("[M00] WR addr=0x%08h data=0x%08h strb=0x%h",
-                    wr_addr, wr_data, wr_strb), UVM_HIGH)
+                    wr_addr, wr_data, wr_strb), UVM_MEDIUM)
 
             // B phase -- BVALID held until BREADY, dropped on the
             // handshake edge
@@ -179,8 +179,10 @@ class axi4lite_slave_driver extends uvm_driver #(axi4lite_seq_item);
             vif.slave_cb.rvalid <= 1'b0;
 
             `uvm_info("LITE_SDRV",
-                $sformatf("[M00] RD addr=0x%08h data=0x%08h",
-                    rd_addr, rd_data), UVM_HIGH)
+                $sformatf("[M00] RD addr=0x%08h rdata=0x%08h%s",
+                    rd_addr, rd_data,
+                    mem.exists({rd_addr[31:2],2'b00}) ? "" : "  <-- NEVER WRITTEN, returns 0"),
+                UVM_MEDIUM)
         end
     endtask
 
