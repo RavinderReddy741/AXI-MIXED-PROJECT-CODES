@@ -87,6 +87,17 @@ class axi3_slave_monitor extends uvm_monitor;
         end
     endtask
 
+    // Source-slot interop check, shared by AW and AR. M01 has no
+    // QoS/Region signals of its own (AXI3 never had them), so the
+    // only thing to check here is the Lite-source single-beat rule --
+    // but it must hold on BOTH channels, not just writes.
+    function void check_source_incompat(string chan, logic [3:0] id, logic [3:0] len);
+        if (check_incompat && id[3:2] == 2'b00 && len != 4'h0)
+            `uvm_error("AXI3_SMON",
+                $sformatf("[M01] INCOMPAT: %sLEN=%0d from Lite source -- must be 0",
+                    chan, len))
+    endfunction
+
     // -- AW ------------------------------------------------
     function void sample_aw();
         axi3_seq_item item;
@@ -99,12 +110,7 @@ class axi3_slave_monitor extends uvm_monitor;
                     $sformatf("[M01] ROUTING FAIL: wr addr=0x%08h id=0x%0h not in M01 region",
                         vif.monitor_cb.awaddr, vif.monitor_cb.awid))
 
-            // INTEROP: Lite source (slot 00) is always single beat
-            if (check_incompat && vif.monitor_cb.awid[3:2] == 2'b00 &&
-                vif.monitor_cb.awlen != 4'h0)
-                `uvm_error("AXI3_SMON",
-                    $sformatf("[M01] INCOMPAT: AWLEN=%0d from Lite source -- must be 0",
-                        vif.monitor_cb.awlen))
+            check_source_incompat("AW", vif.monitor_cb.awid, vif.monitor_cb.awlen);
 
             item = axi3_seq_item::type_id::create("aw");
             item.direction       = AXI_WRITE;
@@ -222,6 +228,8 @@ class axi3_slave_monitor extends uvm_monitor;
                 `uvm_error("AXI3_SMON",
                     $sformatf("[M01] ROUTING FAIL: rd addr=0x%08h id=0x%0h",
                         vif.monitor_cb.araddr, vif.monitor_cb.arid))
+
+            check_source_incompat("AR", vif.monitor_cb.arid, vif.monitor_cb.arlen);
 
             item = axi3_seq_item::type_id::create("ar");
             item.direction       = AXI_READ;

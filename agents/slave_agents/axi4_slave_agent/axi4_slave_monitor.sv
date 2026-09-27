@@ -95,6 +95,54 @@ class axi4_slave_monitor extends uvm_monitor;
         end
     endtask
 
+    // Source-slot interop check, shared by AW and AR so the read
+    // path is checked exactly as thoroughly as the write path.
+    // (Previously AR only checked AXI3-source QoS; the Lite-source
+    // ARLEN=0 check and the AXI4-source-native/unknown-slot cases
+    // were missing on reads, which is why a bad read burst length
+    // from a Lite-sourced read could pass through unflagged.)
+    function void check_source_incompat(
+        string chan, logic [3:0] id, logic [7:0] len,
+        logic [3:0] qos, logic [3:0] region
+    );
+        if (!check_incompat) return;
+        case (id[3:2])
+            2'b00: begin   // Lite source: single beat, no QoS/Region
+                if (len != 8'h0)
+                    `uvm_error("AXI4_SMON",
+                        $sformatf("[%s] INCOMPAT: %sLEN=0x%02h from Lite source -- must be 0",
+                            tag, chan, len))
+                if (qos != 4'h0)
+                    `uvm_error("AXI4_SMON",
+                        $sformatf("[%s] INCOMPAT: %sQOS=0x%0h from Lite source -- must be 0",
+                            tag, chan, qos))
+                if (region != 4'h0)
+                    `uvm_error("AXI4_SMON",
+                        $sformatf("[%s] INCOMPAT: %sREGION=0x%0h from Lite source -- must be 0",
+                            tag, chan, region))
+            end
+            2'b01: begin   // AXI3 source: no QoS/Region, LEN zero-extended from 4 bits
+                if (qos != 4'h0)
+                    `uvm_error("AXI4_SMON",
+                        $sformatf("[%s] INCOMPAT: %sQOS=0x%0h from AXI3 source -- must be 0",
+                            tag, chan, qos))
+                if (region != 4'h0)
+                    `uvm_error("AXI4_SMON",
+                        $sformatf("[%s] INCOMPAT: %sREGION=0x%0h from AXI3 source -- must be 0",
+                            tag, chan, region))
+                if (len[7:4] != 4'h0)
+                    `uvm_error("AXI4_SMON",
+                        $sformatf("[%s] INCOMPAT: %sLEN=0x%02h from AXI3 source -- upper nibble must be 0",
+                            tag, chan, len))
+            end
+            2'b10: ;       // AXI4 source -- native, no extra checks
+            default:
+                `uvm_error("AXI4_SMON",
+                    $sformatf("[%s] UNKNOWN source slot 2'b%02b in %sID=0x%0h",
+                        tag, id[3:2], chan, id))
+        endcase
+    endfunction
+
     // -- AW ------------------------------------------------
     function void sample_aw();
         axi4_seq_item item;
@@ -107,35 +155,8 @@ class axi4_slave_monitor extends uvm_monitor;
                     $sformatf("[%s] ROUTING FAIL: wr addr=0x%08h id=0x%0h",
                         tag, vif.monitor_cb.awaddr, vif.monitor_cb.awid))
 
-            if (check_incompat) begin
-                case (vif.monitor_cb.awid[3:2])
-                    2'b00: begin   // Lite source
-                        if (vif.monitor_cb.awlen != 8'h0)
-                            `uvm_error("AXI4_SMON",
-                                $sformatf("[%s] INCOMPAT: AWLEN=0x%02h from Lite source -- must be 0",
-                                    tag, vif.monitor_cb.awlen))
-                        if (vif.monitor_cb.awqos != 4'h0)
-                            `uvm_error("AXI4_SMON",
-                                $sformatf("[%s] INCOMPAT: AWQOS=0x%0h from Lite source -- must be 0",
-                                    tag, vif.monitor_cb.awqos))
-                    end
-                    2'b01: begin   // AXI3 source
-                        if (vif.monitor_cb.awqos != 4'h0)
-                            `uvm_error("AXI4_SMON",
-                                $sformatf("[%s] INCOMPAT: AWQOS=0x%0h from AXI3 source -- must be 0",
-                                    tag, vif.monitor_cb.awqos))
-                        if (vif.monitor_cb.awlen[7:4] != 4'h0)
-                            `uvm_error("AXI4_SMON",
-                                $sformatf("[%s] INCOMPAT: AWLEN=0x%02h from AXI3 source -- upper nibble must be 0",
-                                    tag, vif.monitor_cb.awlen))
-                    end
-                    2'b10: ;       // AXI4 source -- native
-                    default:
-                        `uvm_error("AXI4_SMON",
-                            $sformatf("[%s] UNKNOWN source slot in AWID=0x%0h",
-                                tag, vif.monitor_cb.awid))
-                endcase
-            end
+            check_source_incompat("AW", vif.monitor_cb.awid, vif.monitor_cb.awlen,
+                                  vif.monitor_cb.awqos, vif.monitor_cb.awregion);
 
             item = axi4_seq_item::type_id::create("aw");
             item.direction       = AXI_WRITE;
@@ -265,11 +286,8 @@ class axi4_slave_monitor extends uvm_monitor;
                     $sformatf("[%s] ROUTING FAIL: rd addr=0x%08h id=0x%0h",
                         tag, vif.monitor_cb.araddr, vif.monitor_cb.arid))
 
-            if (check_incompat && vif.monitor_cb.arid[3:2] == 2'b01 &&
-                vif.monitor_cb.arqos != 4'h0)
-                `uvm_error("AXI4_SMON",
-                    $sformatf("[%s] INCOMPAT: ARQOS=0x%0h from AXI3 source -- must be 0",
-                        tag, vif.monitor_cb.arqos))
+            check_source_incompat("AR", vif.monitor_cb.arid, vif.monitor_cb.arlen,
+                                  vif.monitor_cb.arqos, vif.monitor_cb.arregion);
 
             item = axi4_seq_item::type_id::create("ar");
             item.direction       = AXI_READ;
